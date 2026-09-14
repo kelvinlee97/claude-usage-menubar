@@ -120,13 +120,13 @@ private struct QuotaRow: View {
                 Text(window.title)
                     .font(.callout.weight(.medium))
                 Spacer()
-                Text("\(Int(window.remainingPercent))% left")
+                Text("\(Int(window.usedPercent.rounded()))% used")
                     .monospacedDigit()
             }
-            ProgressView(value: window.remainingPercent, total: 100)
+            ProgressView(value: min(window.usedPercent, 100), total: 100)
                 .tint(progressColor)
-                .accessibilityLabel("\(window.title) remaining")
-                .accessibilityValue("\(Int(window.remainingPercent)) percent")
+                .accessibilityLabel("\(window.title) used")
+                .accessibilityValue("\(Int(window.usedPercent.rounded())) percent")
             HStack(spacing: 3) {
                 Text("Resets")
                 Text(window.resetsAt, style: .relative)
@@ -139,8 +139,8 @@ private struct QuotaRow: View {
     }
 
     private var progressColor: Color {
-        if window.remainingPercent < 10 { return .red }
-        if window.remainingPercent <= 20 { return .orange }
+        if window.usedPercent >= 90 { return .red }
+        if window.usedPercent >= 80 { return .orange }
         return .accentColor
     }
 }

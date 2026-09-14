@@ -92,11 +92,10 @@ enum UsageAPIClient {
     private static func window(in root: Any, keys: [String]) -> LiveUsageWindow? {
         guard let object = firstObject(in: root, matchingAnyOf: keys) else { return nil }
 
-        let percentKeys = ["utilization", "used_percentage", "usedPercent", "percent_used", "used_percent"]
-        guard let (percentKey, rawPercent) = firstNumber(in: object, keys: percentKeys) else { return nil }
-
-        // "utilization" is reported as a 0...1 fraction; the "percentage" spellings are already 0...100.
-        let usedPercent = (percentKey == "utilization" && rawPercent <= 1) ? rawPercent * 100 : rawPercent
+        // Every spelling this endpoint uses — including "utilization" — is already 0...100.
+        // Do not rescale: a genuine 1.0% reading would otherwise be shown as 100%.
+        let percentKeys = ["utilization", "percent", "used_percentage", "usedPercent", "percent_used", "used_percent"]
+        guard let (_, usedPercent) = firstNumber(in: object, keys: percentKeys) else { return nil }
 
         let resetKeys = ["resets_at", "resetsAt", "reset_at", "resetAt"]
         let resetsAt = firstValue(in: object, keys: resetKeys).flatMap(date(from:))
@@ -141,9 +140,18 @@ enum UsageAPIClient {
             return Date(timeIntervalSince1970: seconds)
         }
         if let string = value as? String {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return formatter.date(from: string) ?? ISO8601DateFormatter().date(from: string)
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractional.date(from: string) { return date }
+            if let date = ISO8601DateFormatter().date(from: string) { return date }
+
+            // The endpoint sends microsecond precision ("…:00.106463+00:00"), which
+            // ISO8601DateFormatter rejects; drop the fractional part and retry.
+            if let dot = string.firstIndex(of: "."),
+               let offset = string[dot...].firstIndex(where: { $0 == "+" || $0 == "-" || $0 == "Z" }) {
+                let trimmed = string[..<dot] + string[offset...]
+                return ISO8601DateFormatter().date(from: String(trimmed))
+            }
         }
         return nil
     }
