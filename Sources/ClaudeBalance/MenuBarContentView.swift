@@ -6,6 +6,7 @@ struct MenuBarContentView: View {
     @ObservedObject var store: UsageStore
     @State private var launchAtLogin = LoginItemManager.isEnabled
     @State private var loginItemError: String?
+    @State private var refreshSpinDegrees: Double = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -13,26 +14,56 @@ struct MenuBarContentView: View {
                 Text("Claude Usage")
                     .font(.headline)
                 Spacer()
-                Button {
-                    store.refresh()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
+                if store.isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button {
+                        withAnimation(.linear(duration: 0.4)) {
+                            refreshSpinDegrees += 360
+                        }
+                        store.refresh()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .rotationEffect(.degrees(refreshSpinDegrees))
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut("r", modifiers: .command)
+                    .help("Refresh usage (⌘R)")
+                    .accessibilityLabel("Refresh Claude usage")
                 }
-                .buttonStyle(.plain)
-                .keyboardShortcut("r", modifiers: .command)
-                .help("Refresh usage (⌘R)")
-                .accessibilityLabel("Refresh Claude usage")
             }
 
             QuotaRow(window: store.fiveHourWindow)
             QuotaRow(window: store.sevenDayWindow)
 
-            if store.isDataStale {
-                Label("Data may be stale — no recent Claude Code activity", systemImage: "exclamationmark.triangle")
+            if store.dataUnavailable {
+                Label("No usage data yet — run Claude Code in a terminal once", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.orange)
+            } else if let dataTimestamp = store.dataTimestamp {
+                HStack(spacing: 3) {
+                    Text(store.isLive ? "Updated" : "Measured")
+                    Text(dataTimestamp, style: .relative)
+                    Text("ago")
+                }
+                .font(.caption)
+                .foregroundStyle(store.isDataStale ? .orange : .secondary)
+            }
+
+            if store.isDataStale && !store.dataUnavailable && !store.isLive {
+                Text("Only a Claude Code terminal session refreshes this.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let errorMessage = store.errorMessage, !store.isLive {
+                Text(errorMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Divider()

@@ -5,6 +5,10 @@ import SwiftUI
 struct ClaudeBalanceApp: App {
     @StateObject private var store = UsageStore()
 
+    init() {
+        SelfCheck.runIfRequested()
+    }
+
     var body: some Scene {
         MenuBarExtra {
             MenuBarContentView(store: store)
