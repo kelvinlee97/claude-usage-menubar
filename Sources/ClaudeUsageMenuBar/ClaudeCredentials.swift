@@ -27,7 +27,7 @@ enum ClaudeCredentials {
             case .notFound:
                 "No Claude Code login found. Sign in with `claude` once."
             case let .keychainDenied(status):
-                "Keychain access denied (status \(status)). Allow ClaudeBalance when macOS asks."
+                "Keychain access denied (status \(status)). Allow ClaudeUsageMenuBar when macOS asks."
             case .malformed:
                 "Claude Code credentials were not in the expected format."
             }

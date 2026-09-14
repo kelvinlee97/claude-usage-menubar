@@ -1,6 +1,6 @@
 import Foundation
 
-/// `ClaudeBalance --self-check` reports whether the live usage API is reachable.
+/// `ClaudeUsageMenuBar --self-check` reports whether the live usage API is reachable.
 /// It prints the usage numbers and any error, never the token itself.
 enum SelfCheck {
     static func runIfRequested() {

@@ -39,7 +39,7 @@ enum UsageStatus {
 }
 
 /// Mirrors the `rate_limits` object Claude Code sends to its statusline script.
-/// ClaudeBalance's statusline hook (see README) caches this payload to disk so it
+/// ClaudeUsageMenuBar's statusline hook (see README) caches this payload to disk so it
 /// can be read here without needing its own API access.
 private struct RateLimitsCache: Decodable {
     struct Window: Decodable {
@@ -92,7 +92,7 @@ final class UsageStore: ObservableObject {
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches")
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? base.deletingLastPathComponent().appendingPathComponent("Application Support")
-        return appSupport.appendingPathComponent("ClaudeBalance/usage.json")
+        return appSupport.appendingPathComponent("ClaudeUsageMenuBar/usage.json")
     }()
 
     /// Data older than this is considered stale — the statusline hook only writes a fresh

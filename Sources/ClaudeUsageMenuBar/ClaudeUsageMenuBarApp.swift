@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct ClaudeBalanceApp: App {
+struct ClaudeUsageMenuBarApp: App {
     @StateObject private var store = UsageStore()
 
     init() {
