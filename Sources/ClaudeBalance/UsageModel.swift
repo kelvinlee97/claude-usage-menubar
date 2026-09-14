@@ -77,6 +77,12 @@ final class UsageStore: ObservableObject {
     @Published var sevenDayWindow: UsageWindow
     @Published var lastUpdated: Date = Date()
     @Published var isDataStale: Bool = true
+    /// When the data was actually produced, as opposed to when we last read it.
+    @Published var dataTimestamp: Date?
+    @Published var dataUnavailable: Bool = false
+    @Published var isRefreshing: Bool = false
+    @Published var isLive: Bool = false
+    @Published var errorMessage: String?
 
     private var timer: Timer?
 
@@ -109,26 +115,97 @@ final class UsageStore: ObservableObject {
         startRefreshTimer()
     }
 
-    /// Matches how often Claude Code's statusline hook can write a fresh cache file.
-    private static let refreshInterval: TimeInterval = 3
+    /// The usage endpoint rate limits aggressive callers, so poll gently; the numbers move
+    /// slowly enough that a five minute cadence is plenty.
+    private static let refreshInterval: TimeInterval = 300
+    private static let rateLimitBackoff: TimeInterval = 900
+    private var retryAfter: Date?
 
     private func startRefreshTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: Self.refreshInterval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: Self.refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
             }
         }
+        // .common keeps the timer firing while the menu bar popover is open; a timer left in
+        // the default mode stalls for exactly as long as the user is looking at the panel.
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     func refresh() {
+        Task { await refreshAsync() }
+    }
+
+    /// Prefers the live usage API; falls back to the statusline cache file, which only updates
+    /// while Claude Code is running in a terminal.
+    func refreshAsync() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        if let retryAfter, Date() < retryAfter { return }
+
+        do {
+            let usage = try await UsageAPIClient.fetch()
+            apply(usage)
+            errorMessage = nil
+            retryAfter = nil
+            return
+        } catch let error as UsageAPIClient.APIError {
+            errorMessage = error.localizedDescription
+            if case let .rateLimited(suggested) = error {
+                retryAfter = Date().addingTimeInterval(suggested ?? Self.rateLimitBackoff)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        // Only fall back to the statusline cache when we have never had a live reading.
+        // Once live data exists, a transient API failure must not replace it with an
+        // older number — that regression is worse than showing a slightly aged value.
+        if !isLive {
+            readCacheFile()
+        }
+    }
+
+    private func apply(_ usage: LiveUsage) {
+        lastUpdated = usage.fetchedAt
+        dataTimestamp = usage.fetchedAt
+        dataUnavailable = false
+        isDataStale = false
+        isLive = true
+
+        if let fiveHour = usage.fiveHour {
+            fiveHourWindow = UsageWindow(
+                title: "5-Hour Limit",
+                usedPercent: fiveHour.usedPercent,
+                resetsAt: fiveHour.resetsAt ?? fiveHourWindow.resetsAt
+            )
+        }
+        if let sevenDay = usage.sevenDay {
+            sevenDayWindow = UsageWindow(
+                title: "7-Day Limit",
+                usedPercent: sevenDay.usedPercent,
+                resetsAt: sevenDay.resetsAt ?? sevenDayWindow.resetsAt
+            )
+        }
+    }
+
+    private func readCacheFile() {
         lastUpdated = Date()
+        isLive = false
 
         guard let data = try? Data(contentsOf: Self.cacheURL),
               let cache = try? JSONDecoder().decode(RateLimitsCache.self, from: data) else {
             isDataStale = true
+            dataUnavailable = true
+            dataTimestamp = nil
             return
         }
 
+        dataUnavailable = false
+        dataTimestamp = Date(timeIntervalSince1970: cache.writtenAt)
         isDataStale = Date().timeIntervalSince1970 - cache.writtenAt > Self.staleThreshold
 
         if let fiveHour = cache.rateLimits.fiveHour {
