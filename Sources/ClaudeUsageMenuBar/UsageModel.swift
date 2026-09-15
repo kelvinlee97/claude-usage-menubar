@@ -227,6 +227,6 @@ final class UsageStore: ObservableObject {
 
     /// Mirrors the session figure `/usage` reports, so the two never disagree.
     var menuBarSummary: String {
-        "\(Int(fiveHourWindow.usedPercent.rounded()))%"
+        "Claude \(Int(fiveHourWindow.usedPercent.rounded()))%"
     }
 }
