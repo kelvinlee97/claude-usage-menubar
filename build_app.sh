@@ -52,7 +52,46 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
+CERT_NAME="ClaudeUsageMenuBar Local Signing"
+
+if ! security find-certificate -c "$CERT_NAME" -p >/dev/null 2>&1; then
+    echo "Creating a local self-signed signing certificate (one-time; you may be prompted to trust it)..."
+    CERT_DIR="$(mktemp -d)"
+    trap 'rm -rf "$CERT_DIR"' EXIT
+
+    cat > "$CERT_DIR/cert.conf" <<EOF
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = $CERT_NAME
+
+[v3_req]
+keyUsage = critical, digitalSignature
+extendedKeyUsage = critical, codeSigning
+basicConstraints = critical, CA:false
+EOF
+
+    openssl req -x509 -newkey rsa:2048 -keyout "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem" \
+        -days 3650 -nodes -config "$CERT_DIR/cert.conf" -extensions v3_req >/dev/null 2>&1
+    P12_PASS="cumb-local-signing"
+    openssl pkcs12 -export -out "$CERT_DIR/cert.p12" -inkey "$CERT_DIR/key.pem" -in "$CERT_DIR/cert.pem" \
+        -passout "pass:$P12_PASS" -legacy >/dev/null 2>&1 || \
+    openssl pkcs12 -export -out "$CERT_DIR/cert.p12" -inkey "$CERT_DIR/key.pem" -in "$CERT_DIR/cert.pem" \
+        -passout "pass:$P12_PASS" >/dev/null 2>&1
+
+    security import "$CERT_DIR/cert.p12" -k ~/Library/Keychains/login.keychain-db -P "$P12_PASS" -T /usr/bin/codesign
+    security add-trusted-cert -r trustAsRoot -p codeSign -k ~/Library/Keychains/login.keychain-db "$CERT_DIR/cert.pem" 2>/dev/null || \
+        echo "Note: certificate trust could not be set automatically; you may see one more keychain prompt."
+
+    rm -rf "$CERT_DIR"
+    trap - EXIT
+fi
+
+codesign --force --deep --sign "$CERT_NAME" "$APP_BUNDLE" >/dev/null 2>&1 || \
+    codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
 
 echo "Built $APP_BUNDLE"
 echo "Move it to /Applications, then Spotlight/Finder can find and launch it:"
